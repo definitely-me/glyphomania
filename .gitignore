@@ -1,0 +1,8 @@
+/*
+!/src
+!/tools
+!/external
+!CMakeLists.txt
+/src/glyph_bitmap.h
+!.gitattributes
+!.gitignore
