@@ -13,7 +13,6 @@ set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -flto")
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto")
 
 add_executable(glyphomania
-        src/main.c
         src/image.c
         src/image.h
         src/filter.c
@@ -23,6 +22,7 @@ add_executable(glyphomania
         src/ascii.c
         src/ascii.h
         src/main.c
+        src/glyph_bitmap.h
 )
 
 target_link_libraries(glyphomania PRIVATE m)

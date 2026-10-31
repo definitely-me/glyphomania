@@ -39,10 +39,10 @@ Pixel image_get_pixel(const Image *image, int x, int y) {
     return pixel;
 }
 
-int image_write(const char *path, const Image *image) {
-    assert(path && image);
-    return stbi_write_jpg(path, image->width, image->height, image->channels, image->data, 100);
-}
+// int image_write(const char *path, const Image *image) {
+//     assert(path && image);
+//     return stbi_write_jpg(path, image->width, image->height, image->channels, image->data, 100);
+// }
 
 Image image_create(int width, int height, int channels) {
     assert(width > 0 && height > 0);

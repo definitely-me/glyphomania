@@ -2,105 +2,350 @@
 #include "filter.h"
 #include "utils.h"
 #include "ascii.h"
-
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <errno.h>
+#include "../external/stb_image_write.h"
 
-#define DEBUG_WIDTH 3200
-#define DEBUG_HEIGHT 3200
 #define CHANNEL_VARIATIONS 4
-#define TARGET_COLORS 2
 
-static double get_time_diff_ms(struct timespec t_start, struct timespec t_end) {
-    return (t_end.tv_sec - t_start.tv_sec) * 1000.0 +
-           (t_end.tv_nsec - t_start.tv_nsec) / 1000000.0;
-}
+#define BENCHMARK(_label, _call) \
+    do { \
+        if (benchmark == 1) { \
+            struct timespec _step_start, _step_end; \
+            clock_gettime(CLOCK_MONOTONIC, &_step_start); \
+            _call; \
+            clock_gettime(CLOCK_MONOTONIC, &_step_end); \
+            fprintf(stderr, "%-28s %7.2lf ms\n", _label, get_time_diff_ms(_step_start, _step_end)); \
+        } \
+        else { \
+            _call; \
+        } \
+    } while (0)
 
-int main(void) {
-    struct timespec total_start, total_end;
-    struct timespec step_start, step_end;
+typedef enum {
+    UNKNOWN,
+    HELP,
+    DOWNSAMPLE_RES,
+    ASCII_RES,
+    K_MEANS_TRG_COLORS,
+    K_MEANS_ITERATIONS,
+    K_MEANS_STRIDE,
+    DENOISE_RADIUS,
+    ASCII_STRIDE,
+    INPUT_PATH,
+    OUTPUT_PATH,
+    VISUALIZE_STEPS,
+    BENCHMARK,
+    NAME
+} CmdArg;
 
-    clock_gettime(CLOCK_MONOTONIC, &total_start);
-
-    /* 1. Загрузка исходника */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    Image src_image;
-    image_load(&src_image, "eww.jpeg");
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[IO]   image_load:         %7.2f мс (%dx%d)\n",
-           get_time_diff_ms(step_start, step_end),
-           src_image.width, src_image.height);
-    /* 2. Даунскейл / Апскейл */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    Image downsample_image = image_create(DEBUG_WIDTH, DEBUG_HEIGHT, 3);
-    downsample(&src_image, &downsample_image, 1);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[PROC] downsample:         %7.2f мс (%dx%d)\n",
-           get_time_diff_ms(step_start, step_end),
-           DEBUG_WIDTH, DEBUG_HEIGHT);
-    /* 3. Сбор палитры */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    Palette palette_1 = palette_create(CHANNEL_VARIATIONS);
-    build_palette(&downsample_image, &palette_1);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[PROC] build_palette:      %7.2f мс\n", get_time_diff_ms(step_start, step_end));
-    /* 4. K-Means */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    Image quantized_1 = image_create(DEBUG_WIDTH, DEBUG_HEIGHT, 3);
-    Palette best_colors = k_means_quantize(&downsample_image, &quantized_1, &palette_1, TARGET_COLORS, 20);
-    pallette_free(&palette_1);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[PROC] k_means_quantize:   %7.2f мс\n", get_time_diff_ms(step_start, step_end));
-
-    /* 5. Денойз */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    Image denoise_image = image_create(DEBUG_WIDTH, DEBUG_HEIGHT, 3);
-    denoise(&quantized_1, &denoise_image, 1);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[PROC] denoise:            %7.2f мс\n", get_time_diff_ms(step_start, step_end));
-
-    /* 7. Сохранение файла */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    image_write("result.jpg", &denoise_image);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[IO]   image_write:        %7.2f мс\n", get_time_diff_ms(step_start, step_end));
-
-    clock_gettime(CLOCK_MONOTONIC, &total_end);
-    printf("----------------------------------------\n");
-    printf("[TOTAL] Общее время:       %7.2f мс\n", get_time_diff_ms(total_start, total_end));
-
-    /* 8. Бинарные блобы и запись P1-маски */
-    clock_gettime(CLOCK_MONOTONIC, &step_start);
-    size_t pixel_count = (size_t) denoise_image.width * denoise_image.height;
-    uint8_t *data = malloc(pixel_count * sizeof(uint8_t));
-    to_binary_blobs(&denoise_image, data, best_colors.data[0]);
-
-    FILE *mask_file = fopen("mask.pbm", "w");
-    fprintf(mask_file, "P1\n%d %d\n", denoise_image.width, denoise_image.height);
-    for (int y = 0; y < denoise_image.height; y++) {
-        for (int x = 0; x < denoise_image.width; x++) {
-            fputs(data[y * denoise_image.width + x] ? "1 " : "0 ", mask_file);
-        }
-        fputc('\n', mask_file);
-    }
-    fclose(mask_file);
-    free(data);
-    clock_gettime(CLOCK_MONOTONIC, &step_end);
-    printf("[IO]   mask.pbm:           %7.2f мс\n", get_time_diff_ms(step_start, step_end));
-
-    GlyphImage gi = glyph_image_create(400, 200);
-    to_ascii(&denoise_image, &gi, best_colors.data, TARGET_COLORS, 7, " ");
-    FILE *f = fopen("output.txt", "w");
-
-    for (int y = 0; y < gi.height; y++) {
-        for (int x = 0; x < gi.width; x++) {
-            const char *g = gi.glyphs[y * gi.width + x];
-            fputs(g ? g : " ", f);
+static void visualise_blobs(const uint8_t *data, int width, int height, const char *path,
+                            int visualise_steps) {
+    if (!visualise_steps) return;
+    FILE *f = fopen(path, "w");
+    fprintf(f, "P1\n%d %d\n", width, height);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            data[y * width + x] ? fputs("1 ", f) : fputs("0 ", f);
         }
         fputc('\n', f);
     }
-
     fclose(f);
+}
+
+static void r_ascii(FILE *f, const char **data, int width, int height) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            fputs(data[y * width + x], f);
+        }
+        fputc('\n', f);
+    }
+}
+
+static const char *concat_strings(const char *str1, const char *str2) {
+    unsigned long len1 = strlen(str1);
+    unsigned long len2 = strlen(str2);
+    char *buffer = malloc(len1 + len2 + 1);
+    buffer[0] = '\0';
+    strcat(buffer, str1);
+    strcat(buffer, str2);
+    buffer[len1 + len2] = '\0';
+    return buffer;
+}
+
+static void visualise_step(Image *image, const char *path, int boolean_visualise) {
+    if (boolean_visualise) {
+        int err = stbi_write_jpg(path, image->width, image->height, image->channels, image->data, 100);
+        if (!err) {
+            perror(path);
+        }
+    }
+}
+
+static double get_time_diff_ms(struct timespec t_start, struct timespec t_end) {
+    return (double) (t_end.tv_sec - t_start.tv_sec) * 1000 +
+           (double) (t_end.tv_nsec - t_start.tv_nsec) / 1e6;
+}
+
+static int parse_long(const char *str, long *out) {
+    char *end;
+    errno = 0;
+    long val = strtol(str, &end, 10);
+
+    if (end == str || *end != '\0' || errno == ERANGE) {
+        return 1;
+    }
+    *out = val;
+    return 0;
+}
+
+static CmdArg parse_argument(const char *arg) {
+    if (!strcmp(arg, "--help") || !strcmp(arg, "-h")) return HELP;
+    if (!strcmp(arg, "--downsample-res")) return DOWNSAMPLE_RES;
+    if (!strcmp(arg, "--ascii-res")) return ASCII_RES;
+    if (!strcmp(arg, "--k_means-colors")) return K_MEANS_TRG_COLORS;
+    if (!strcmp(arg, "--k_means-iters")) return K_MEANS_ITERATIONS;
+    if (!strcmp(arg, "--k_means-stride")) return K_MEANS_STRIDE;
+    if (!strcmp(arg, "--denoise-radius")) return DENOISE_RADIUS;
+    if (!strcmp(arg, "--ascii-stride")) return ASCII_STRIDE;
+    if (!strcmp(arg, "--visualize-steps")) return VISUALIZE_STEPS;
+    if (!strcmp(arg, "--benchmark")) return BENCHMARK;
+    if (!strcmp(arg, "--input") || !strcmp(arg, "-i")) return INPUT_PATH;
+    if (!strcmp(arg, "--output") || !strcmp(arg, "-o")) return OUTPUT_PATH;
+    if (!strcmp(arg, "--name")) return NAME;
+    return UNKNOWN;
+}
+
+static void print_help() {
+}
+
+int main(int argc, char *argv[]) {
+    const char *input_path = NULL;
+    const char *output_path = "./";
+    const char *name = "ascii.txt";
+
+    long downsample_w = 3200;
+    long downsample_h = 3200;
+    long ascii_w = 400;
+    long ascii_h = 200;
+    long k_means_colors = 3;
+    long k_means_iters = 10;
+    long k_means_stride = 8;
+    long denoise_radius = 9;
+    long ascii_threshold = 5;
+
+    int visualize_steps = 0;
+    int benchmark = 0;
+
+    struct timespec total_start, total_end;
+
+    if (argc < 2) {
+        print_help();
+        return 1;
+    }
+
+    for (int i = 1; i < argc; i++) {
+        CmdArg arg = parse_argument(argv[i]);
+        switch (arg) {
+            case HELP:
+                print_help();
+                return 0;
+
+            case INPUT_PATH:
+                if (++i >= argc) {
+                    fprintf(stderr, "--input requires a path\n");
+                    return 1;
+                }
+                input_path = argv[i];
+                break;
+
+            case OUTPUT_PATH:
+                if (++i >= argc) {
+                    fprintf(stderr, "--output requires a path\n");
+                    return 1;
+                }
+                output_path = argv[i];
+                break;
+
+            case DOWNSAMPLE_RES:
+                if (i + 2 >= argc) {
+                    fprintf(stderr, "--downsample-res requires width height\n");
+                    return 1;
+                }
+                if (parse_long(argv[++i], &downsample_w) || parse_long(argv[++i], &downsample_h) || downsample_w <= 0
+                    || downsample_h <= 0) {
+                    fprintf(stderr, "invalid dimensions for --downsample-res\n");
+                    return 1;
+                }
+                if (downsample_h > 8640 || downsample_w > 15360) {
+                    fprintf(stderr, "crazy?\n");
+                    return 1;
+                }
+                break;
+
+            case ASCII_RES:
+                if (i + 2 >= argc) {
+                    fprintf(stderr, "--ascii-res requires width height\n");
+                    return 1;
+                }
+                if (parse_long(argv[++i], &ascii_w) || parse_long(argv[++i], &ascii_h)
+                    || ascii_w <= 0 || ascii_h <= 0) {
+                    fprintf(stderr, "invalid dimensions for --ascii-res\n");
+                    return 1;
+                }
+                if (ascii_w > 2048 || ascii_h > 2048) {
+                    fprintf(stderr, "crazy?\n");
+                    return 1;
+                }
+                break;
+
+            case K_MEANS_TRG_COLORS:
+                if (++i >= argc) {
+                    fprintf(stderr, "--k_means-colors requires a number\n");
+                    return 1;
+                }
+                if (parse_long(argv[i], &k_means_colors) || k_means_colors > CHANNEL_VARIATIONS / sizeof(uint8_t)
+                    || k_means_colors < 2) {
+                    fprintf(stderr, "invalid value for --k_means-colors: %s."
+                            " enter an integer between 2 and 64.\n "
+                            "the best value is between 2 and 8\n", argv[i]);
+                    return 1;
+                }
+                break;
+
+            case K_MEANS_ITERATIONS:
+                if (++i >= argc) {
+                    fprintf(stderr, "--k_means-iters requires a number\n");
+                    return 1;
+                }
+                if (parse_long(argv[i], &k_means_iters) || k_means_iters < 1) {
+                    fprintf(stderr, "invalid value for --k_means-iters: %s\n."
+                            " the best value is between 10 and 20.", argv[i]);
+                    return 1;
+                }
+                break;
+
+            case K_MEANS_STRIDE:
+                if (++i >= argc) {
+                    fprintf(stderr, "--k_means-stride requires a number\n");
+                    return 1;
+                }
+                if (parse_long(argv[i], &k_means_stride) || k_means_stride < 1) {
+                    fprintf(stderr, "invalid value for --k_means-stride: %s\n."
+                            " the best value is between 4 and 16.", argv[i]);
+                    return 1;
+                }
+                break;
+
+            case DENOISE_RADIUS:
+                if (++i >= argc) {
+                    fprintf(stderr, "--denoise-radius requires a number\n");
+                    return 1;
+                }
+                if (parse_long(argv[i], &denoise_radius) || denoise_radius < 1 || denoise_radius % 2 == 0) {
+                    fprintf(stderr, "invalid value for --denoise-radius: %s\n. enter an integer mod 2 != 0.\n"
+                            "the best value is between 3 and 9", argv[i]);
+                    return 1;
+                }
+                break;
+
+            case ASCII_STRIDE:
+                if (++i >= argc) {
+                    fprintf(stderr, "--ascii-stride requires a number\n");
+                    return 1;
+                }
+                if (parse_long(argv[i], &ascii_threshold)) {
+                    fprintf(stderr, "invalid value for --ascii-stride: %s\n. the best value is between 3 and 7",
+                            argv[i]);
+                    return 1;
+                }
+                break;
+
+            case VISUALIZE_STEPS:
+                visualize_steps = 1;
+                break;
+
+            case BENCHMARK:
+                benchmark = 1;
+                break;
+
+            case NAME:
+                name = argv[i];
+                if (++i >= argc) {
+                    fprintf(stderr, "--name requires a non-empty string\n");
+                    return 1;
+                }
+                if (!strcmp(argv[i], "")) {
+                    fprintf(stderr, "--name cant be empty\n");
+                    return 1;
+                }
+                break;
+
+            default:
+                fprintf(stderr, "unknown argument: %s\n", argv[i]);
+                return 1;
+        }
+    }
+
+    if (benchmark) clock_gettime(CLOCK_MONOTONIC, &total_start);
+
+    Image src_image;
+    if (input_path != NULL) {
+        image_load(&src_image, input_path);
+    } else {
+        fprintf(stderr, "--input path required\n");
+        return 1;
+    }
+
+    Image downsample_image = image_create((int) downsample_w, (int) downsample_h, 3);
+    BENCHMARK("[DOWNSAMPLE] Area Average", downsample(&src_image, &downsample_image, 1));
+    BENCHMARK("[DUMP] Downsampled Frame", visualise_step(&downsample_image, concat_strings(output_path,
+                  "downsampled.jpg"), visualize_steps));
+
+    Palette palette = palette_create(CHANNEL_VARIATIONS);
+    BENCHMARK("[PALETTE] Histogram Sampling", build_palette(&downsample_image, &palette));
+
+    Image quantized = image_create((int) downsample_w, (int) downsample_h, 3);
+    Palette best_colors;
+    BENCHMARK("[K-MEANS] Color Quantization", best_colors = k_means_quantize(&downsample_image, &quantized, &palette,
+                  (int) k_means_colors, (int) k_means_iters));
+    BENCHMARK("[DUMP] Quantized Frame", visualise_step(&quantized, concat_strings(output_path, "quantised.jpg"),
+                  visualize_steps));
+    pallette_free(&palette);
+
+    Image denoised = image_create((int) downsample_w, (int) downsample_h, 3);
+    BENCHMARK("[DENOISE] Morphological Clean", denoise(&quantized, &denoised, (int) denoise_radius));
+    BENCHMARK("[DUMP] Denoised Frame", visualise_step(&denoised, concat_strings(output_path, "denoised.jpg"),
+                  visualize_steps));
+
+    uint8_t *data = malloc(denoised.width * denoised.height * sizeof(uint8_t));
+    GlyphImage glyph_image = glyph_image_create((int) ascii_w, (int) ascii_h);
+    FILE *f = fopen(concat_strings(output_path, name), "w");
+
+    for (int color_i = 0; color_i < k_means_colors; color_i++) {
+        Pixel color = best_colors.data[color_i];
+        BENCHMARK("[BLOBS] Binary Maskify", to_binary_blobs(&denoised, data, color));
+        char num[20];
+        snprintf(num, sizeof(num), "%d", color_i);
+        BENCHMARK(concat_strings("[DUMP] Binary Frame ", num), visualise_blobs(data, denoised.width, denoised.height,
+                      concat_strings(output_path, concat_strings(concat_strings("binary ", num), ".pbm")),
+                      visualize_steps));
+        to_ascii(&denoised, &glyph_image, data, (int) ascii_threshold, " ");
+        memset(data, 0, denoised.width * denoised.height * sizeof(uint8_t));
+    }
+    r_ascii(f, glyph_image.glyphs, glyph_image.width, glyph_image.height);
+
+    free(data);
+
+
+    if (benchmark) {
+        clock_gettime(CLOCK_MONOTONIC, &total_end);
+        fprintf(stderr, "--------------------------------------------\n");
+        fprintf(stderr, "%-28s %7.2lf ms\n", "Total Pipeline Time:", get_time_diff_ms(total_start, total_end));
+    }
+
     return 0;
 }

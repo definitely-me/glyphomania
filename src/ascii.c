@@ -80,56 +80,45 @@ static int dist_matrix2d_compare(const uint8_t *m1, const uint8_t *m2, int size)
 }
 
 
-void to_ascii(const Image *src, GlyphImage *trg, const Pixel *colors_data, int target_colors,
-              int threshold, const char *empty_glyph) {
+void to_ascii(const Image *src, GlyphImage *trg, const uint8_t *data, int threshold, const char *empty_glyph) {
     int width = trg->width;
     int height = trg->height;
-    printf("%d", round_up(src->width, PWD));
     assert(width == round_up(src->width, PWD));
     assert(height == round_up(src->height, PHD));
     uint8_t *slice = malloc(PWD * PHD * sizeof(uint8_t));
+    for (int trg_y = 0; trg_y < height; trg_y++) {
+        for (int trg_x = 0; trg_x < width; trg_x++) {
+            if (trg->glyphs[trg_y * width + trg_x] != NULL && trg->glyphs[trg_y * width + trg_x] != empty_glyph)
+                continue;
 
-    for (int color_i = 0; color_i < target_colors; color_i++) {
-        if (color_i == 1) continue;
+            memset(slice, 0, PWD * PHD * sizeof(uint8_t));
 
-        uint8_t *data = malloc(src->height * src->width * sizeof(uint8_t));
+            matrix2d_get_slice(data, slice, src->width, src->height, trg_x * PWD, trg_y * PHD, PWD, PHD);
 
-        to_binary_blobs(src, data, colors_data[color_i]);
+            const char *glyph = empty_glyph;
 
-        for (int trg_y = 0; trg_y < height; trg_y++) {
-            for (int trg_x = 0; trg_x < width; trg_x++) {
-                if (trg->glyphs[trg_y * width + trg_x] != NULL) continue;
+            if (test_slice(slice, threshold, PWD, PHD, 1) == 0) {
+                int min_diff = INT_MAX;
+                const char *min_diff_glyph = empty_glyph;
 
-                memset(slice, 0, PWD * PHD * sizeof(uint8_t));
+                uint8_t dist_matrix2d[PWD * PHD] = {0};
 
-                matrix2d_get_slice(data, slice, src->width, src->height, trg_x * PWD, trg_y * PHD, PWD, PHD);
-
-                const char *glyph = NULL;
-
-                if (test_slice(slice, threshold, PWD, PHD, 1) == 0) {
-                    int min_diff = INT_MAX;
-                    const char *min_diff_glyph = " ";
-
-                    uint8_t dist_matrix2d[PWD * PHD] = {0};
-
-                    for (int y = 0; y < PHD; y++) {
-                        for (int x = 0; x < PWD; x++) {
-                            dist_matrix2d[y * PWD + x] = (uint8_t) bfs_nearest(slice, PWD, PHD, x, y, 1);
-                        }
+                for (int y = 0; y < PHD; y++) {
+                    for (int x = 0; x < PWD; x++) {
+                        dist_matrix2d[y * PWD + x] = (uint8_t) bfs_nearest(slice, PWD, PHD, x, y, 1);
                     }
-                    for (int i = 0; i < GLYPH_WIDE_OFFSET; i++) {
-                        int diff = dist_matrix2d_compare(dist_matrix2d, GLYPHS[i].bitmap, PWD * PHD);
-                        if (diff < min_diff) {
-                            min_diff = diff;
-                            min_diff_glyph = GLYPHS[i].glyph;
-                        }
-                    }
-                    glyph = min_diff_glyph;
                 }
-                trg->glyphs[trg_y * width + trg_x] = glyph;
+                for (int i = 0; i < GLYPH_WIDE_OFFSET; i++) {
+                    int diff = dist_matrix2d_compare(dist_matrix2d, GLYPHS[i].bitmap, PWD * PHD);
+                    if (diff < min_diff) {
+                        min_diff = diff;
+                        min_diff_glyph = GLYPHS[i].glyph;
+                    }
+                }
+                glyph = min_diff_glyph;
             }
+            trg->glyphs[trg_y * width + trg_x] = glyph;
         }
-        free(data);
     }
     free(slice);
 }
