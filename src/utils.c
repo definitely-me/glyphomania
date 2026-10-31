@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 Queue queue_create(int size) {
     Queue q;
@@ -33,13 +34,6 @@ void queue_add(Queue *q, int element) {
     q->size = q->size + 1;
 }
 
-int queue_dot2d_exists(Queue *q, int x, int y) {
-    for (int i = 0; i < q->last_index; i += 2) {
-        if (q->queue[i] == x && q->queue[i + 1] == y) return 1;
-    }
-    return 0;
-}
-
 double intersection(double s1, double s2, double e1, double e2) {
     return fmin(e1, e2) - fmax(s1, s2);
 }
@@ -68,8 +62,12 @@ int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, in
     if (matrix2d[start_y * matrix_width + start_x] == trg_val) return 0;
     int dist = 0;
     Queue q = queue_create(matrix_width * matrix_height * 2);
+    uint8_t visited[matrix_width * matrix_height];
+    memset(visited, 0, sizeof(visited));
+
     queue_add(&q, start_x);
     queue_add(&q, start_y);
+    visited[start_y * matrix_width + start_x] = 1;
 
     int q_size = q.size / 2;
     int q_taken = 0;
@@ -80,19 +78,20 @@ int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, in
     while (q.size > 0) {
         int curr_x = queue_get(&q);
         int curr_y = queue_get(&q);
-        q_taken++;
 
         for (int i = 0; i < 4; i++) {
             int x = curr_x + dx[i];
             int y = curr_y + dy[i];
 
-            if (x >= 0 && y >= 0 && x < matrix_width && y < matrix_height && queue_dot2d_exists(&q, x, y) == 0) {
+            if (x >= 0 && y >= 0 && x < matrix_width && y < matrix_height && !visited[y * matrix_width + x]) {
                 if (matrix2d[y * matrix_width + x] == trg_val) return dist + 1;
                 queue_add(&q, x);
                 queue_add(&q, y);
+                visited[y * matrix_width + x] = 1;
             }
         }
-        if (q_size == q_taken) {
+        q_taken++;
+        if (q_taken == q_size) {
             dist++;
             q_taken = 0;
             q_size = q.size / 2;

@@ -27,8 +27,6 @@ int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, in
 
 int queue_get(Queue *queue);
 
-int queue_dot2d_exists(Queue *q, int x, int y);
-
 void queue_add(Queue *queue, int element);
 
 void queue_free(Queue *queue);
