@@ -23,7 +23,9 @@ typedef struct {
 
 static int cmp_entries(const void *a, const void *b);
 
-void downsample(const Image *src_image, Image *trg_image, int factor);
+void resample_intersection(const Image *src_image, Image *trg_image, int factor);
+
+void resample_nearest(const Image *src_image, Image *trg_image, int factor);
 
 //void to_oklab_L(const Image *src_image, Image *trg_image);
 

@@ -50,7 +50,7 @@ Image image_create(int width, int height, int channels) {
     image.width = width;
     image.height = height;
     image.channels = channels;
-    image.data = calloc(width * height * channels, sizeof(u_int8_t));
+    image.data = calloc(width * height * channels, sizeof(uint8_t));
     return image;
 }
 
@@ -68,8 +68,8 @@ int pixel_compare(Pixel p1, Pixel p2) {
     cnt += (p1.g == p2.g);
     cnt += (p1.b == p2.b);
 
-    if (cnt == 3) return 0;
-    return 1;
+    if (cnt == 3) return 1;
+    return 0;
 }
 
 int pixels_compare(Pixel p1, Pixel p2) {
@@ -77,7 +77,7 @@ int pixels_compare(Pixel p1, Pixel p2) {
     return 1;
 }
 
-Pixel pixel_create(u_int8_t r, u_int8_t g, u_int8_t b) {
+Pixel pixel_create(uint8_t r, uint8_t g, uint8_t b) {
     Pixel p;
     p.r = r;
     p.g = g;

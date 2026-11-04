@@ -226,7 +226,7 @@ Palette k_means_quantize(const Image *src_image, Image *trg_image, const Palette
     return curr_palette;
 }
 
-void downsample(const Image *src_image, Image *trg_image, int factor) {
+void resample_intersection(const Image *src_image, Image *trg_image, int factor) {
     assert(src_image->width > 0 && src_image->height > 0 && src_image != NULL && trg_image != NULL
         && src_image->channels == 3 && trg_image->channels == 3);
 
@@ -261,9 +261,9 @@ void downsample(const Image *src_image, Image *trg_image, int factor) {
                 }
             }
             int ptr = (trg_y * width + trg_x) * trg_image->channels;
-            trg_image->data[ptr] = (u_int8_t) (r / trgS);
-            trg_image->data[ptr + 1] = (u_int8_t) (g / trgS);
-            trg_image->data[ptr + 2] = (u_int8_t) (b / trgS);
+            trg_image->data[ptr] = (uint8_t) (r / trgS);
+            trg_image->data[ptr + 1] = (uint8_t) (g / trgS);
+            trg_image->data[ptr + 2] = (uint8_t) (b / trgS);
         }
     }
 }
@@ -295,7 +295,7 @@ void denoise(const Image *src_image, Image *trg_image, int side_size) {
                     int found = 0;
 
                     for (int i = 0; i < cnt; i++) {
-                        if (pixel_compare(current_pixel, map[i].pixel) == 0) {
+                        if (pixel_compare(current_pixel, map[i].pixel)) {
                             map[i].count++;
                             found = 1;
                         }
@@ -310,7 +310,7 @@ void denoise(const Image *src_image, Image *trg_image, int side_size) {
 
             int max_count = INT_MIN;
             Pixel pixel;
-            for (int i = 0; i < len; i++) {
+            for (int i = 0; i < cnt; i++) {
                 if (max_count < map[i].count) {
                     max_count = map[i].count;
                     pixel = map[i].pixel;

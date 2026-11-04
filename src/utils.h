@@ -3,6 +3,7 @@
 
 #define imin(a, b) ((a) < (b) ? (a) : (b))
 #define imax(a, b) ((a) > (b) ? (a) : (b))
+#define floor_f(x) ((int) (x))
 
 typedef struct {
     int max_size;

@@ -8,6 +8,7 @@
 #include <time.h>
 #include <errno.h>
 #include "../external/stb_image_write.h"
+#include "glyph_bitmap.h"
 
 #define CHANNEL_VARIATIONS 4
 
@@ -24,6 +25,11 @@
             _call; \
         } \
     } while (0)
+
+#define PWD PREFERRED_WIDTH_DIVISOR
+#define PHD PREFERRED_HEIGHT_DIVISOR
+
+#define STEPS "12"
 
 typedef enum {
     UNKNOWN,
@@ -56,6 +62,16 @@ static void visualise_blobs(const uint8_t *data, int width, int height, const ch
     fclose(f);
 }
 
+static void add_blobs(const uint8_t *data_new, uint8_t *data_dump, int width, int height) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            data_dump[y * width + x] = data_dump[y * width + x] == data_new[y * width + x]
+                                           ? data_dump[y * width + x]
+                                           : data_new[y * width + x];
+        }
+    }
+}
+
 static void r_ascii(FILE *f, const char **data, int width, int height) {
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -65,7 +81,7 @@ static void r_ascii(FILE *f, const char **data, int width, int height) {
     }
 }
 
-static const char *concat_strings(const char *str1, const char *str2) {
+static const char *con_str(const char *str1, const char *str2) {
     unsigned long len1 = strlen(str1);
     unsigned long len2 = strlen(str2);
     char *buffer = malloc(len1 + len2 + 1);
@@ -104,7 +120,7 @@ static int parse_long(const char *str, long *out) {
 
 static CmdArg parse_argument(const char *arg) {
     if (!strcmp(arg, "--help") || !strcmp(arg, "-h")) return HELP;
-    if (!strcmp(arg, "--downsample-res")) return DOWNSAMPLE_RES;
+    if (!strcmp(arg, "--resample-res")) return DOWNSAMPLE_RES;
     if (!strcmp(arg, "--ascii-res")) return ASCII_RES;
     if (!strcmp(arg, "--k_means-colors")) return K_MEANS_TRG_COLORS;
     if (!strcmp(arg, "--k_means-iters")) return K_MEANS_ITERATIONS;
@@ -127,15 +143,18 @@ int main(int argc, char *argv[]) {
     const char *output_path = "./";
     const char *name = "ascii.txt";
 
-    long downsample_w = 3200;
-    long downsample_h = 3200;
-    long ascii_w = 400;
-    long ascii_h = 200;
-    long k_means_colors = 3;
+    long ascii_w = 200;
+    long ascii_h = 100;
+    long downsample_w = ascii_w * 1 * 3;
+    long downsample_h = ascii_h * 2 * 3;
+    long k_means_colors = 5;
     long k_means_iters = 10;
     long k_means_stride = 8;
-    long denoise_radius = 9;
-    long ascii_threshold = 5;
+    long ascii_threshold = 8;
+
+    long *denoise_radius_vals = malloc(4 * sizeof(long));
+    denoise_radius_vals[0] = 7; denoise_radius_vals[1] = 1; denoise_radius_vals[2] = 3; denoise_radius_vals[3] = 1;
+    int vals_cnt = 4;
 
     int visualize_steps = 0;
     int benchmark = 0;
@@ -245,11 +264,23 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "--denoise-radius requires a number\n");
                     return 1;
                 }
-                if (parse_long(argv[i], &denoise_radius) || denoise_radius < 1 || denoise_radius % 2 == 0) {
-                    fprintf(stderr, "invalid value for --denoise-radius: %s\n. enter an integer mod 2 != 0.\n"
-                            "the best value is between 3 and 9", argv[i]);
-                    return 1;
+                int cnt = 0;
+                for (int j = i; j < argc && argv[j][0] != '-'; j++) {
+                    cnt++;
                 }
+                free(denoise_radius_vals);
+                denoise_radius_vals = malloc(cnt * sizeof(long));
+                for (int j = 0; j < cnt; j++) {
+                    long denoise_radius;
+                    if (parse_long(argv[i + j], &denoise_radius) || denoise_radius < 1 || denoise_radius % 2 == 0) {
+                        fprintf(stderr, "invalid value for --denoise-radius: %s\n. enter an integer mod 2 != 0.\n"
+                                "the best value is between 3 and 9", argv[i]);
+                        return 1;
+                    }
+                    denoise_radius_vals[j] = denoise_radius;
+                }
+                vals_cnt = cnt;
+                i += cnt;
                 break;
 
             case ASCII_STRIDE:
@@ -301,51 +332,90 @@ int main(int argc, char *argv[]) {
     }
 
     Image downsample_image = image_create((int) downsample_w, (int) downsample_h, 3);
-    BENCHMARK("[DOWNSAMPLE] Area Average", downsample(&src_image, &downsample_image, 1));
-    BENCHMARK("[DUMP] Downsampled Frame", visualise_step(&downsample_image, concat_strings(output_path,
-                  "downsampled.jpg"), visualize_steps));
+    BENCHMARK(con_str("[1/", con_str(STEPS, "] Resample: Area Average")),
+              resample_intersection(&src_image, &downsample_image, 1));
+    BENCHMARK(con_str("[2/", con_str(STEPS, "] Visualize: Downsampled")),
+              visualise_step(&downsample_image, con_str(output_path, "downsampled.jpg"), visualize_steps));
 
     Palette palette = palette_create(CHANNEL_VARIATIONS);
-    BENCHMARK("[PALETTE] Histogram Sampling", build_palette(&downsample_image, &palette));
+    BENCHMARK(con_str("[3/", con_str(STEPS, "] Palette: Histogram Sampling")), build_palette(&downsample_image,
+                  &palette));
 
     Image quantized = image_create((int) downsample_w, (int) downsample_h, 3);
     Palette best_colors;
-    BENCHMARK("[K-MEANS] Color Quantization", best_colors = k_means_quantize(&downsample_image, &quantized, &palette,
+    BENCHMARK(con_str("[4/", con_str(STEPS, "] K-Means: Color Quantization")), best_colors = k_means_quantize(
+                  &downsample_image, &quantized, &palette,
                   (int) k_means_colors, (int) k_means_iters));
-    BENCHMARK("[DUMP] Quantized Frame", visualise_step(&quantized, concat_strings(output_path, "quantised.jpg"),
+    BENCHMARK(con_str("[5/", con_str(STEPS, "] Visualize: Quantized")), visualise_step(&quantized,
+                  con_str(output_path, "quantised.jpg"),
                   visualize_steps));
     pallette_free(&palette);
 
     Image denoised = image_create((int) downsample_w, (int) downsample_h, 3);
-    BENCHMARK("[DENOISE] Morphological Clean", denoise(&quantized, &denoised, (int) denoise_radius));
-    BENCHMARK("[DUMP] Denoised Frame", visualise_step(&denoised, concat_strings(output_path, "denoised.jpg"),
-                  visualize_steps));
+    Image *curr_denoised;
+    BENCHMARK(con_str("[6/", con_str(STEPS, "] Denoise: Morphological Close")),
+        for (int i = 0; i < vals_cnt; i++) {
+            if (i % 2 == 0) {
+                denoise(&quantized, &denoised, (int) denoise_radius_vals[i]);
+                curr_denoised = &denoised;
+            }
+            else {
+                denoise(&denoised, &quantized, (int) denoise_radius_vals[i]);
+                curr_denoised = &quantized;
+            }
+        });
+    BENCHMARK(con_str("[7/", con_str(STEPS, "] Visualize: Denoised")), visualise_step(curr_denoised,
+                  con_str(output_path, "denoised.jpg"), visualize_steps));
 
-    uint8_t *data = malloc(denoised.width * denoised.height * sizeof(uint8_t));
     GlyphImage glyph_image = glyph_image_create((int) ascii_w, (int) ascii_h);
-    FILE *f = fopen(concat_strings(output_path, name), "w");
+
+    int full_w = glyph_image.width * PWD;
+    int full_h = glyph_image.height * PHD;
+
+    uint8_t *data = calloc(curr_denoised->width * curr_denoised->height, sizeof(uint8_t));
+    uint8_t *data_resample = calloc(full_w * full_h, sizeof(uint8_t));
+    uint8_t *data_edges = calloc(full_w * full_h, sizeof(uint8_t));
+    uint8_t *data_dump = calloc(full_w * full_h, sizeof(uint8_t));
+
+    FILE *f = fopen(con_str(output_path, name), "w");
 
     for (int color_i = 0; color_i < k_means_colors; color_i++) {
         Pixel color = best_colors.data[color_i];
-        BENCHMARK("[BLOBS] Binary Maskify", to_binary_blobs(&denoised, data, color));
+
         char num[20];
-        snprintf(num, sizeof(num), "%d", color_i);
-        BENCHMARK(concat_strings("[DUMP] Binary Frame ", num), visualise_blobs(data, denoised.width, denoised.height,
-                      concat_strings(output_path, concat_strings(concat_strings("binary ", num), ".pbm")),
-                      visualize_steps));
-        to_ascii(&denoised, &glyph_image, data, (int) ascii_threshold, " ");
-        memset(data, 0, denoised.width * denoised.height * sizeof(uint8_t));
+        snprintf(num, sizeof(num), "%d", color_i + 1);
+        fprintf(stderr, con_str(con_str("With color ", num), ":\n"));
+
+        BENCHMARK(con_str("    [8/", con_str(STEPS, "] Blobs: Mask")),
+                  to_binary_blobs(curr_denoised, data, color);
+                  blobs_bilinear_resample(curr_denoised, data, data_resample, full_w, full_h);
+                  blob_find_edges(data_resample, data_edges, full_w, full_h););
+        BENCHMARK(con_str("    [9/", con_str(STEPS, "] Accumulate: Binary Frame ")),
+                  add_blobs(data_edges, data_dump, full_w, full_h));
+        BENCHMARK(con_str("    [10/", con_str(STEPS, "] ASCII: Edges")),
+                  to_ascii(&glyph_image, data_edges, (int) ascii_threshold, " "));
+
+        memset(data, 0, curr_denoised->width * curr_denoised->height * sizeof(uint8_t));
+        memset(data_resample, 0, full_w * full_h * sizeof(uint8_t));
+        memset(data_edges, 0, full_w * full_h * sizeof(uint8_t));
     }
-    r_ascii(f, glyph_image.glyphs, glyph_image.width, glyph_image.height);
+    BENCHMARK(con_str("[11/", con_str(STEPS, "] Output: Binary Dump (PBM)")),
+              visualise_blobs(data_dump, full_w, full_h, con_str(output_path,
+                  con_str("binary", ".pbm")), visualize_steps));
 
-    free(data);
-
+    BENCHMARK(con_str("[12/", con_str(STEPS, "] Output: ASCII Text")),
+              r_ascii(f, glyph_image.glyphs, glyph_image.width, glyph_image.height));
 
     if (benchmark) {
         clock_gettime(CLOCK_MONOTONIC, &total_end);
         fprintf(stderr, "--------------------------------------------\n");
         fprintf(stderr, "%-28s %7.2lf ms\n", "Total Pipeline Time:", get_time_diff_ms(total_start, total_end));
     }
+
+    free(data);
+    free(data_resample);
+    free(data_edges);
+    free(data_dump);
 
     return 0;
 }
