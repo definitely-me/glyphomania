@@ -4,13 +4,14 @@
 #define imin(a, b) ((a) < (b) ? (a) : (b))
 #define imax(a, b) ((a) > (b) ? (a) : (b))
 #define floor_f(x) ((int) (x))
+#define clamp_to_zero(x) ((x) < 0 ? 0 : (x))
 
 typedef struct {
     int max_size;
     int size;
     int next_index;
     int last_index;
-    int *queue;
+    int* queue;
 } Queue;
 
 Queue queue_create(int size);
@@ -23,11 +24,11 @@ int ipow(int a, int b);
 
 int round_up(int val, int divisor);
 
-int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, int start_x, int start_y,
+int bfs_nearest(const uint8_t* matrix2d, int matrix_width, int matrix_height, int start_x, int start_y,
                 uint8_t trg_val);
 
-int queue_get(Queue *queue);
+int queue_get(Queue* queue);
 
-void queue_add(Queue *queue, int element);
+void queue_add(Queue* queue, int element);
 
-void queue_free(Queue *queue);
+void queue_free(Queue* queue);

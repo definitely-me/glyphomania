@@ -2,34 +2,31 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../external/stb_image.h"
 #include "../external/stb_image_write.h"
-#include <stdio.h>
 #include "image.h"
 #include <assert.h>
 #include <stdlib.h>
 #include "utils.h"
 
 
-int image_load(Image *image, const char *path) {
-    assert(image && path);
+int image_load(Image* image, const char* path) {
     image->data = stbi_load(path, &image->width, &image->height, NULL,
                             DESIRED_CHANNELS);
     image->channels = DESIRED_CHANNELS;
     if (image->data == NULL) {
-        fprintf(stderr, "failed to load image '%s'\n", path);
-        return 1;
+        return 0;
     }
-    return 0;
+    return 1;
 }
 
-void image_free(Image *image) {
+void image_free(Image* image) {
     if (image != NULL) stbi_image_free(image->data);
 }
 
-void pallette_free(Palette *palette) {
+void pallette_free(Palette* palette) {
     if (palette != NULL) free(palette->data);
 }
 
-Pixel image_get_pixel(const Image *image, int x, int y) {
+Pixel image_get_pixel(const Image* image, int x, int y) {
     assert(image->channels == 3);
     Pixel pixel;
     assert(image);

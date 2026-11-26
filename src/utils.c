@@ -15,11 +15,11 @@ Queue queue_create(int size) {
     return q;
 }
 
-void queue_free(Queue *queue) {
+void queue_free(Queue* queue) {
     if (queue != NULL) free(queue->queue);
 }
 
-int queue_get(Queue *q) {
+int queue_get(Queue* q) {
     assert(q->size > 0);
     assert(q->next_index < q->last_index);
     int r = q->queue[q->next_index];
@@ -28,7 +28,7 @@ int queue_get(Queue *q) {
     return r;
 }
 
-void queue_add(Queue *q, int element) {
+void queue_add(Queue* q, int element) {
     q->queue[q->last_index] = element;
     q->last_index = q->last_index + 1;
     q->size = q->size + 1;
@@ -57,7 +57,7 @@ int round_up(int val, int divisor) {
     return val / divisor + 1;
 }
 
-int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, int start_x, int start_y,
+int bfs_nearest(const uint8_t* matrix2d, int matrix_width, int matrix_height, int start_x, int start_y,
                 uint8_t trg_val) {
     if (matrix2d[start_y * matrix_width + start_x] == trg_val) return 0;
     int dist = 0;
@@ -84,7 +84,10 @@ int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, in
             int y = curr_y + dy[i];
 
             if (x >= 0 && y >= 0 && x < matrix_width && y < matrix_height && !visited[y * matrix_width + x]) {
-                if (matrix2d[y * matrix_width + x] == trg_val) return dist + 1;
+                if (matrix2d[y * matrix_width + x] == trg_val) {
+                    queue_free(&q);
+                    return dist + 1;
+                }
                 queue_add(&q, x);
                 queue_add(&q, y);
                 visited[y * matrix_width + x] = 1;
@@ -97,5 +100,6 @@ int bfs_nearest(const uint8_t *matrix2d, int matrix_width, int matrix_height, in
             q_size = q.size / 2;
         }
     }
+    queue_free(&q);
     return 255;
 }

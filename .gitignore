@@ -3,6 +3,9 @@
 !/tools
 !/external
 !CMakeLists.txt
-/src/glyph_bitmap.h
+#/src/glyph_bitmap.h
 !.gitattributes
 !.gitignore
+!README.md
+!docs
+!resources

@@ -1,5 +1,3 @@
-#include "../external/stb_image.h"
-#include <stdio.h>
 #include "image.h"
 #include <assert.h>
 #include <math.h>
@@ -11,9 +9,9 @@
 
 
 static int color_distance_sq(Pixel p1, Pixel p2) {
-    int dr = (int) p1.r - (int) p2.r;
-    int dg = (int) p1.g - (int) p2.g;
-    int db = (int) p1.b - (int) p2.b;
+    int dr = (int)p1.r - (int)p2.r;
+    int dg = (int)p1.g - (int)p2.g;
+    int db = (int)p1.b - (int)p2.b;
     return dr * dr + dg * dg + db * db;
 }
 
@@ -49,12 +47,12 @@ static Pixel get_pixel(int index, int channel_variations) {
 }
 
 
-void build_palette(const Image *src_image, Palette *palette) {
+void build_palette(const Image* src_image, Palette* palette) {
     int channel_variations = palette->channel_variations;
     int width = src_image->width;
     int height = src_image->height;
     int total_bins = palette->size;
-    ColorEntry *candidates = calloc(total_bins, sizeof(ColorEntry));
+    ColorEntry* candidates = calloc(total_bins, sizeof(ColorEntry));
     for (int src_x = 0; src_x < width; src_x++) {
         for (int src_y = 0; src_y < height; src_y++) {
             Pixel pixel = image_get_pixel(src_image, src_x, src_y);
@@ -78,7 +76,7 @@ void build_palette(const Image *src_image, Palette *palette) {
         // the darkest
         if (i == 0) {
             int min_power = INT_MAX;
-            Pixel min_power_p;
+            Pixel min_power_p = {0};
             for (int c = 0; c < candidates_passed; c++) {
                 Pixel curr_p = get_pixel(candidates[c].color_index, channel_variations);
                 int power = color_power(curr_p);
@@ -93,7 +91,7 @@ void build_palette(const Image *src_image, Palette *palette) {
         //the lightest
         else if (i == 1) {
             int max_power = INT_MIN;
-            Pixel max_power_p;
+            Pixel max_power_p = {0};
             for (int c = 0; c < candidates_passed; c++) {
                 Pixel curr_p = get_pixel(candidates[c].color_index, channel_variations);
                 int power = color_power(curr_p);
@@ -103,9 +101,10 @@ void build_palette(const Image *src_image, Palette *palette) {
                 }
             }
             palette->data[i] = max_power_p;
-        } else {
+        }
+        else {
             int max_distance = INT_MIN;
-            Pixel best_p;
+            Pixel best_p = {0};
 
             for (int c = 0; c < candidates_passed; c++) {
                 Pixel curr_p = get_pixel(candidates[c].color_index, channel_variations);
@@ -130,7 +129,7 @@ void build_palette(const Image *src_image, Palette *palette) {
 }
 
 
-static int find_nearest_color(const Pixel src_p, const Palette *palette, int target_colors) {
+static int find_nearest_color(const Pixel src_p, const Palette* palette, int target_colors) {
     int min_distance = INT_MAX;
     int best_pixel = 0;
 
@@ -145,25 +144,25 @@ static int find_nearest_color(const Pixel src_p, const Palette *palette, int tar
     return best_pixel;
 }
 
-static int compare_by_frequency_desc(const void *a, const void *b) {
-    const PixelEntry *ca = a;
-    const PixelEntry *cb = b;
+static int compare_by_frequency_desc(const void* a, const void* b) {
+    const PixelEntry* ca = a;
+    const PixelEntry* cb = b;
 
     if (cb->count > ca->count) return 1;
     if (cb->count < ca->count) return -1;
     return 0;
 }
 
-static void sort_pixel_entries(PixelEntry *p, int target_colors) {
+static void sort_pixel_entries(PixelEntry* p, int target_colors) {
     qsort(p, target_colors, sizeof(PixelEntry), compare_by_frequency_desc);
 }
 
-Palette k_means_quantize(const Image *src_image, Image *trg_image, const Palette *palette, int target_colors,
+Palette k_means_quantize(const Image* src_image, Image* trg_image, const Palette* palette, int target_colors,
                          int iterations) {
     int width = trg_image->width;
     int height = trg_image->height;
 
-    Pixel *best_colors_data = malloc(target_colors * sizeof(Pixel));
+    Pixel* best_colors_data = malloc(target_colors * sizeof(Pixel));
     for (int i = 0; i < target_colors; i++) {
         best_colors_data[i] = palette->data[i];
     }
@@ -173,7 +172,7 @@ Palette k_means_quantize(const Image *src_image, Image *trg_image, const Palette
     curr_palette.size = target_colors;
     curr_palette.channel_variations = palette->channel_variations;
 
-    PixelEntry *means = malloc(target_colors * sizeof(PixelEntry));
+    PixelEntry* means = malloc(target_colors * sizeof(PixelEntry));
 
     while (iterations > 0) {
         memset(means, 0, target_colors * sizeof(PixelEntry));
@@ -192,9 +191,9 @@ Palette k_means_quantize(const Image *src_image, Image *trg_image, const Palette
 
         for (int i = 0; i < target_colors; i++) {
             if (means[i].count > 0) {
-                best_colors_data[i].r = (uint8_t) (means[i].r_accum / means[i].count);
-                best_colors_data[i].g = (uint8_t) (means[i].g_accum / means[i].count);
-                best_colors_data[i].b = (uint8_t) (means[i].b_accum / means[i].count);
+                best_colors_data[i].r = (uint8_t)(means[i].r_accum / means[i].count);
+                best_colors_data[i].g = (uint8_t)(means[i].g_accum / means[i].count);
+                best_colors_data[i].b = (uint8_t)(means[i].b_accum / means[i].count);
             }
             if (iterations == 1) {
                 means[i].r_accum = best_colors_data[i].r;
@@ -226,17 +225,22 @@ Palette k_means_quantize(const Image *src_image, Image *trg_image, const Palette
     return curr_palette;
 }
 
-void resample_intersection(const Image *src_image, Image *trg_image, int factor) {
+void resample_intersection(const Image* src_image, Image* trg_image, int factor) {
     assert(src_image->width > 0 && src_image->height > 0 && src_image != NULL && trg_image != NULL
         && src_image->channels == 3 && trg_image->channels == 3);
+
+    if (src_image->width == trg_image->width && src_image->height == trg_image->height) {
+        memcpy(trg_image->data, src_image->data, trg_image->width * trg_image->height * DESIRED_CHANNELS);
+        return;
+    }
 
     int width = trg_image->width;
     int height = trg_image->height;
 
     int src_width = src_image->width;
     int src_height = src_image->height;
-    double ratio_width = (double) src_width / width;
-    double ratio_height = (double) src_height / height;
+    double ratio_width = (double)src_width / width;
+    double ratio_height = (double)src_height / height;
 
     for (int trg_y = 0; trg_y < height; trg_y++) {
         for (int trg_x = 0; trg_x < width; trg_x++) {
@@ -248,8 +252,8 @@ void resample_intersection(const Image *src_image, Image *trg_image, int factor)
 
             double r = 0, g = 0, b = 0;
 
-            for (int src_y = (int) trg_start_y; src_y < trg_end_y; src_y++) {
-                for (int src_x = (int) trg_start_x; src_x < trg_end_x; src_x++) {
+            for (int src_y = (int)trg_start_y; src_y < trg_end_y && src_y < src_height; src_y++) {
+                for (int src_x = (int)trg_start_x; src_x < trg_end_x && src_x < src_width; src_x++) {
                     double part_x = intersection(trg_start_x, src_x, trg_end_x, src_x + 1);
                     double part_y = intersection(trg_start_y, src_y, trg_end_y, src_y + 1);
                     double part_x_y = part_x * part_y;
@@ -261,16 +265,19 @@ void resample_intersection(const Image *src_image, Image *trg_image, int factor)
                 }
             }
             int ptr = (trg_y * width + trg_x) * trg_image->channels;
-            trg_image->data[ptr] = (uint8_t) (r / trgS);
-            trg_image->data[ptr + 1] = (uint8_t) (g / trgS);
-            trg_image->data[ptr + 2] = (uint8_t) (b / trgS);
+            trg_image->data[ptr] = (uint8_t)(r / trgS);
+            trg_image->data[ptr + 1] = (uint8_t)(g / trgS);
+            trg_image->data[ptr + 2] = (uint8_t)(b / trgS);
         }
     }
 }
 
-void denoise(const Image *src_image, Image *trg_image, int side_size) {
+void denoise(const Image* src_image, Image* trg_image, int side_size) {
     assert(side_size % 2 != 0); //there is an exact center
-
+    if (side_size == 1) {
+        memcpy(trg_image->data, src_image->data, trg_image->width * trg_image->height * DESIRED_CHANNELS);
+        return;
+    }
     int width = trg_image->width;
     int height = trg_image->height;
     int len = ipow(side_size, 2);
@@ -309,7 +316,7 @@ void denoise(const Image *src_image, Image *trg_image, int side_size) {
             }
 
             int max_count = INT_MIN;
-            Pixel pixel;
+            Pixel pixel = {0};
             for (int i = 0; i < cnt; i++) {
                 if (max_count < map[i].count) {
                     max_count = map[i].count;
