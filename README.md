@@ -250,6 +250,6 @@ A wide glyph replaces two narrow ones when its difference is smaller than the na
 
 ## Credits and licenses
 
-- **GNU Unifont** by Roman Czyborra, Paul Hardy: <https://unifoundry.org/unifont/>  [SIL Open Font License 1.1](https://sil.org)
+- **GNU Unifont** by Roman Czyborra, Paul Hardy: <https://unifoundry.com/unifont/>  [SIL Open Font License 1.1] (https://sil.org)
 - **stb_image / stb_image_write** by Sean Barrett: <https://github.com/nothings/stb> [Public Domain](https://unlicense.org) / [MIT](https://opensource.org)
 - **Glyphomania**: [MIT License](LICENSE)
